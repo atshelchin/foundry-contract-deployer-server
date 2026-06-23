@@ -38,6 +38,23 @@ async function getSrcDir(dir: string): Promise<string> {
   }
 }
 
+/** Recursively collect .sol file names under a directory */
+async function collectSolFiles(dir: string, found: Set<string>): Promise<void> {
+  try {
+    for await (const entry of Deno.readDir(dir)) {
+      const path = `${dir}/${entry.name}`;
+      if (entry.isDirectory) {
+        await collectSolFiles(path, found);
+      } else if (entry.isFile && entry.name.endsWith(".sol")) {
+        // out/ is keyed by the .sol basename, so collect basenames only
+        found.add(entry.name);
+      }
+    }
+  } catch {
+    // dir doesn't exist or isn't readable
+  }
+}
+
 /** Scan the out/ directory for compiled contracts */
 async function getContracts(dir: string): Promise<
   Array<{ name: string; file: string; bytecode: string; abi: unknown[] }>
@@ -51,17 +68,9 @@ async function getContracts(dir: string): Promise<
     abi: unknown[];
   }> = [];
 
-  // Collect source files under src/
+  // Collect source files recursively under src/ (Foundry allows nested dirs)
   const srcFiles = new Set<string>();
-  try {
-    for await (const entry of Deno.readDir(`${dir}/${srcDir}`)) {
-      if (entry.isFile && entry.name.endsWith(".sol")) {
-        srcFiles.add(entry.name);
-      }
-    }
-  } catch {
-    // src/ doesn't exist
-  }
+  await collectSolFiles(`${dir}/${srcDir}`, srcFiles);
 
   try {
     for await (const entry of Deno.readDir(outDir)) {
